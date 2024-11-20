@@ -11,9 +11,7 @@ function App() {
   useEffect(() => {
     loadModel();
     startVideo();
-
     videoRef.current?.addEventListener("loadeddata", detectFaces);
-
     return () => {
       videoRef.current?.removeEventListener("loadeddata", detectFaces);
     };
@@ -37,7 +35,7 @@ function App() {
         {
           runtime: "tfjs",
           maxFaces: 5,
-          modelType: "full",
+          modelType: "short",
         }
       );
       setDetector(model);
@@ -48,24 +46,21 @@ function App() {
 
   const detectFaces = async () => {
     if (!detector || !videoRef.current || !canvasRef.current) return;
-
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-
     try {
       const faces = await detector.estimateFaces(video);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       if (faces.length > 0) {
         setFaceDetected(true);
         faces.forEach((face) => {
           const { xMin, yMin, width, height } = face.box;
+          console.log(xMin, yMin, width, height)
           ctx.strokeStyle = "red";
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 20;
           ctx.strokeRect(xMin, yMin, width, height);
         });
       } else {
@@ -75,7 +70,6 @@ function App() {
       console.error("Error during face detection:", error);
       setFaceDetected(false);
     }
-
     requestAnimationFrame(detectFaces);
   };
 
