@@ -7,6 +7,7 @@ function App() {
   const canvasRef = useRef();
   const [expressions, setExpressions] = useState({});
   const [dominantExpression, setDominantExpression] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     startVideo();
@@ -47,31 +48,27 @@ function App() {
         width: video.videoWidth,
         height: video.videoHeight,
       };
-
       // Match canvas to video size
       faceapi.matchDimensions(canvas, displaySize);
-
       setInterval(async () => {
         // Detect faces
         const detections = await faceapi
           .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
           .withFaceLandmarks()
           .withFaceExpressions();
-
+        if (detections) {
+          setIsLoading(false)
+        }
         // Resize detections to match canvas
         const resizedDetections = faceapi.resizeResults(detections, displaySize);
-
         // Clear previous drawings
         const context = canvas.getContext('2d');
         context.clearRect(0, 0, canvas.width, canvas.height);
-
         // Draw detections on canvas
         faceapi.draw.drawDetections(canvas, resizedDetections);
         faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
         faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
-
         if (detections.length > 0) {
-          console.log(detections)
           const detectedExpressions = detections[0].expressions;
           setExpressions(detectedExpressions);
           const highestExpression = Object.keys(detectedExpressions).reduce((a, b) =>
@@ -88,14 +85,17 @@ function App() {
 
 
   return (
-    <div className="myapp">
-      <div className="video-container">
-        {/* Video feed */}
-        <video ref={videoRef} autoPlay muted crossOrigin="anonymous"></video>
-        {/* Overlay canvas */}
-        <canvas id="expressions" ref={canvasRef} />
+    <>
+      <div className="myapp">
+        <div className="video-container">
+          {/* Video feed */}
+          <video ref={videoRef} autoPlay muted crossOrigin="anonymous"></video>
+          {/* Overlay canvas */}
+          <canvas id="expressions" ref={canvasRef} />
+        </div>
       </div>
-    </div>
+      {isLoading && <h1 style={{ display: 'inline', position: 'absolute' }}>Loading...</h1>}
+    </>
   );
 }
 
