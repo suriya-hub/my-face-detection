@@ -1,137 +1,102 @@
-import React, { useRef, useEffect, useState } from "react";
-import * as faceDetection from "@tensorflow-models/face-detection";
-import "@tensorflow/tfjs-backend-webgl";
+import { useRef, useEffect, useState } from 'react';
+import './App.css';
+import * as faceapi from 'face-api.js';
 
 function App() {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [detector, setDetector] = useState(null);
-  const [faceDetected, setFaceDetected] = useState(false);
+  const videoRef = useRef();
+  const canvasRef = useRef();
+  const [expressions, setExpressions] = useState({});
+  const [dominantExpression, setDominantExpression] = useState('');
 
   useEffect(() => {
-    loadModel();
     startVideo();
-    videoRef.current?.addEventListener("loadeddata", detectFaces);
-    return () => {
-      videoRef.current?.removeEventListener("loadeddata", detectFaces);
-    };
+    loadModels();
   }, []);
 
-  const startVideo = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
+  // Open webcam
+  const startVideo = () => {
+    navigator.mediaDevices
+      .getUserMedia({ video: true })
+      .then((currentStream) => {
+        videoRef.current.srcObject = currentStream;
+      })
+      .catch((err) => {
+        console.error('Error accessing webcam:', err);
       });
-      videoRef.current.srcObject = stream;
-    } catch (error) {
-      console.error("Error accessing video stream:", error);
-    }
   };
 
-  const loadModel = async () => {
-    try {
-      const model = await faceDetection.createDetector(
-        faceDetection.SupportedModels.MediaPipeFaceDetector,
-        {
-          runtime: "tfjs",
-          maxFaces: 5,
-          modelType: "short",
-        }
-      );
-      setDetector(model);
-    } catch (error) {
-      console.error("Error loading model:", error);
-    }
+  // Load models from face-api.js
+  const loadModels = async () => {
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+      faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+      faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+      faceapi.nets.faceExpressionNet.loadFromUri('/models'),
+    ]);
+    startDetection();
   };
 
-  const detectFaces = async () => {
-    if (!detector || !videoRef.current || !canvasRef.current) return;
+  // Start face detection
+  const startDetection = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    try {
-      const faces = await detector.estimateFaces(video);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (faces.length > 0) {
-        setFaceDetected(true);
-        faces.forEach((face) => {
-          const { xMin, yMin, width, height } = face.box;
-          console.log(xMin, yMin, width, height)
-          ctx.strokeStyle = "red";
-          ctx.lineWidth = 20;
-          ctx.strokeRect(xMin, yMin, width, height);
-        });
-      } else {
-        setFaceDetected(false);
-      }
-    } catch (error) {
-      console.error("Error during face detection:", error);
-      setFaceDetected(false);
-    }
-    requestAnimationFrame(detectFaces);
+
+    // Run detection loop
+    video.addEventListener('loadedmetadata', () => {
+      const displaySize = {
+        width: video.videoWidth,
+        height: video.videoHeight,
+      };
+
+      // Match canvas to video size
+      faceapi.matchDimensions(canvas, displaySize);
+
+      setInterval(async () => {
+        // Detect faces
+        const detections = await faceapi
+          .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.2 }))
+          .withFaceLandmarks()
+          .withFaceExpressions();
+
+        // Resize detections to match canvas
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+        // Clear previous drawings
+        const context = canvas.getContext('2d');
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw detections on canvas
+        faceapi.draw.drawDetections(canvas, resizedDetections);
+        faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+        faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+
+        if (detections.length > 0) {
+          console.log(detections)
+          const detectedExpressions = detections[0].expressions;
+          setExpressions(detectedExpressions);
+          const highestExpression = Object.keys(detectedExpressions).reduce((a, b) =>
+            detectedExpressions[a] > detectedExpressions[b] ? a : b
+          );
+          setDominantExpression(highestExpression);
+        } else {
+          setExpressions({});
+          setDominantExpression('No face detected');
+        }
+      }, 300);
+    });
   };
 
+
   return (
-    <div style={styles.container}>
-      <h1 style={styles.header}>Face Detection App</h1>
-      <div style={styles.videoContainer}>
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          style={styles.video}
-        />
-        <canvas ref={canvasRef} style={styles.canvas} />
-      </div>
-      <div style={styles.status}>
-        {faceDetected ? (
-          <span style={{ color: "green" }}>Face Detected ✅</span>
-        ) : (
-          <span style={{ color: "red" }}>No Face Detected ❌</span>
-        )}
+    <div className="myapp">
+      <div className="video-container">
+        {/* Video feed */}
+        <video ref={videoRef} autoPlay muted crossOrigin="anonymous"></video>
+        {/* Overlay canvas */}
+        <canvas id="expressions" ref={canvasRef} />
       </div>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    textAlign: "center",
-    padding: "20px",
-    fontFamily: "Arial, sans-serif",
-  },
-  header: {
-    fontSize: "2rem",
-    marginBottom: "20px",
-  },
-  videoContainer: {
-    position: "relative",
-    display: "inline-block",
-    width: "80%",
-    maxWidth: "800px",
-  },
-  video: {
-    width: "100%",
-    height: "auto",
-    border: "2px solid black",
-    transform: "scaleX(-1)",
-  },
-  canvas: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    width: "100%",
-    height: "100%",
-    pointerEvents: "none",
-    transform: "scaleX(-1)",
-  },
-  status: {
-    marginTop: "20px",
-    fontSize: "1.2rem",
-    fontWeight: "bold",
-  },
-};
 
 export default App;
